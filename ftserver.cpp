@@ -13,6 +13,8 @@ Chatserve.cpp
 #include <cstdio>
 #include <cstring>
 #include <sys/stat.h>
+#include <sys/wait.h>
+#include <unistd.h>
 #include <signal.h>
 //from Beej's guide section 5.1
 #include <sys/types.h>
@@ -36,8 +38,12 @@ void validate(int arg_count){
 
 //exit function
 void cleanup(int){
-	cout << endl << "cleaning stuff up " << endl;
+	cout << endl << "graceful exit " << endl;
+	pid_t caughtPid;
+	int status;
+	caughtPid = waitpid(-1, &status, WNOHANG);
 	exit(0);
+	
 
 }
 //Function from Beej's guide to get the sending host
@@ -53,16 +59,34 @@ void *get_in_addr(struct sockaddr *sa){
 void listDir (const char *dataPort){
 	cout << "List directory requested \n on port " <<  dataPort << endl;
 	cout << "Sending Directory \n contents to " <<  dataPort << endl;
+	exit(EXIT_SUCCESS);
 
 }
 //function to send the file
 void fileSend(const char *dataPort){
 cout << "File Send Function "<< endl; 
+exit(EXIT_SUCCESS);
+
+/*
+int total //how many bytes sent
+int left = *len // how many are left to send
+int n
+
+while total < *len 
+	n = send(msg, buf+total, bytesleft, 0)
+	total +=n
+	bytesleft -=n;
+	
+	*len = total; 
+	
+	retrun -1 for success, 0 for failure
+*/
 
 }
 //Function to send an error message
 void sendError(){
 	cout << "You've broken the internet!" << endl;
+	exit(EXIT_SUCCESS);
 
 }
 
@@ -125,7 +149,6 @@ int tcp_this( const char *this_port){
 	int socket_fd;
 	int yes = 1;
 	
-	cout << "starting the tcp_this\n";
 	memset(&serv, 0, sizeof(serv));
 	serv.ai_family = AF_UNSPEC;			//don't care IPv4 or IPv6
 	serv.ai_socktype = SOCK_STREAM;		//TCP!
@@ -151,6 +174,7 @@ int tcp_this( const char *this_port){
 		close(socket_fd);
 		cout <<"error in bind " << bind_status << endl;
 	}
+	cout << "Server open on port " << this_port << endl;
 return(socket_fd);
 	
 }
@@ -162,30 +186,49 @@ void listening(int socket_fd, const char *this_port){
 	int listen_status;
 	struct sockaddr_storage them;
 	socklen_t addr_size;
-	
 	int next_fd;
 	char s[INET_ADDRSTRLEN];
-	
+	pid_t childProc = -5;
+	pid_t waitForIt;
+	int status;
 	listen_status= listen(socket_fd, 10);
 	if (listen_status == -1){
 		cout << "listening error\n";
 		exit(5);
 	}
-	cout << "Server open on port " << this_port << endl;
+	
 	//accept a connection
 	addr_size = sizeof(them);
 	next_fd = accept(socket_fd, (sockaddr *) &them, &addr_size);
 	if (next_fd < 0){
 		cout << "Accept error\n";
 	}
-	//Function straight from Beej's guide #getpeername
+	//Function straight from Beej's guid
+	//Prints to STDOUT where the connection is coming from.
 	inet_ntop(them.ss_family, get_in_addr(( struct sockaddr *)&them), s, sizeof s);
 	cout << "connection from " << s << endl;
-	
-	
-	cout << "connected from " << endl;
-	instructions(next_fd);
-	
+	childProc = fork();
+		if (childProc == 0){
+			cout << "This is the child process\n";
+			close(socket_fd);
+			instructions(next_fd);
+		}
+		else if(childProc == -1){
+			cout << "fork failed\n";
+			exit(6);
+		}
+		else{
+			close(next_fd);
+				//The do while loop is based on the man page for waitpid
+			do{
+				waitForIt = waitpid(childProc, &status, WUNTRACED | WCONTINUED);
+				if (waitForIt == -1){
+					cout << "waitpid error\n";
+					exit(7);
+				}
+				
+			}while(!WIFEXITED(status) && !WIFSIGNALED(status));
+		}
 }
 
 
@@ -198,6 +241,8 @@ int main(int argc, char* argv[]){
 	const char *port = argv[1];
 	int main_fd;
 	int mySig = 1;
+	pid_t anyPID = 0;		//for waitpid, to reap the dead children, runs each loop.
+	int status;				//for waitpid
 	//Signal Area. I took some of this code from my CS344 project
 	//To stop the server use CTRL+C
 	struct sigaction srvKll;
@@ -206,12 +251,29 @@ int main(int argc, char* argv[]){
 	sigfillset(&(srvKll.sa_mask));
 	sigaction(SIGINT, &srvKll, NULL);
 	//End signal area
-	cout << "starting\n";
+	
 	
 	//Calling tcp_this to get the connection set up
 	main_fd = tcp_this(port);
+	
 	while (mySig == 1){
-	listening(main_fd, port);
+		//read dead children, commented out error status
+		//code taken from my CS344 project
+		anyPID = waitpid(-1, &status, WNOHANG);
+		/*
+		if ( anyPID > 0){
+			if (status == 1 || status == 0){
+			printf("background pid %d is done: exit value %d\n", anyPID, status);
+			}
+			else if (status > 1){
+			printf("background pid %d is done: terminated by signal %d\n", anyPID, status);
+			}
+			else{
+				printf("background pid %d is done: %d\n", anyPID, status);
+			}
+		
+		}*/
+		listening(main_fd, port);
 	}
 	
     return 0;
