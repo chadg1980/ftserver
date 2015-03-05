@@ -34,19 +34,29 @@ void validate(int arg_count){
 
 }
 
+//exit function
 void cleanup(int){
 	cout << endl << "cleaning stuff up " << endl;
 	exit(0);
 
 }
+//Function from Beej's guide to get the sending host
+//I could not decifer all the parantheses and where to put * & on my own
+void *get_in_addr(struct sockaddr *sa){
+	if (sa->sa_family == AF_INET){
+		return &(((struct sockaddr_in*)sa)->sin_addr);
+	}
+	return &(((struct sockaddr_in6*)sa)->sin6_addr);
+}
 
 //Function to send the directory
-void listDir(){
-	cout << "ListDir Function" << endl;
+void listDir (const char *dataPort){
+	cout << "List directory requested \n on port " <<  dataPort << endl;
+	cout << "Sending Directory \n contents to " <<  dataPort << endl;
 
 }
 //function to send the file
-void fileSend(){
+void fileSend(const char *dataPort){
 cout << "File Send Function "<< endl; 
 
 }
@@ -93,10 +103,10 @@ void instructions(int client_fd){
 	cout << "The length of "<< inputArr[0] << " is " << bytRcv << endl;
 
 	if (strcmp(standOut, "-l")==0){
-		listDir();
+		listDir(inputArr[1]);
 	}
 	else if (strcmp(standOut, "-g")==0){
-		fileSend();
+		fileSend(inputArr[1]);
 	}
 	else{
 		sendError();
@@ -152,20 +162,28 @@ void listening(int socket_fd, const char *this_port){
 	int listen_status;
 	struct sockaddr_storage them;
 	socklen_t addr_size;
+	
 	int next_fd;
+	char s[INET_ADDRSTRLEN];
 	
 	listen_status= listen(socket_fd, 10);
 	if (listen_status == -1){
 		cout << "listening error\n";
 		exit(5);
 	}
-	cout << "Listening on port " << this_port << endl;
+	cout << "Server open on port " << this_port << endl;
 	//accept a connection
 	addr_size = sizeof(them);
 	next_fd = accept(socket_fd, (sockaddr *) &them, &addr_size);
 	if (next_fd < 0){
 		cout << "Accept error\n";
 	}
+	//Function straight from Beej's guide #getpeername
+	inet_ntop(them.ss_family, get_in_addr(( struct sockaddr *)&them), s, sizeof s);
+	cout << "connection from " << s << endl;
+	
+	
+	cout << "connected from " << endl;
 	instructions(next_fd);
 	
 }

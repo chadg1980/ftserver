@@ -29,7 +29,27 @@ else:
 	command = sys.argv[3]
 	dataPort = sys.argv[4]
 
-controlSock = createSocket(serverName, dataPort)
-controlSock.send(command)
+msg = (command + " " + dataPort)
+
+	
+controlSock = createSocket(serverName, serverPort)
+controlSock.send(msg)
 serverIn()
 controlSock.close()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
