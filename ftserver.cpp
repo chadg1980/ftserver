@@ -56,7 +56,37 @@ void *get_in_addr(struct sockaddr *sa){
 }
 
 //Function to send the directory
-void listDir (const char *dataPort){
+void listDir (const char *dataPort, char s[INET_ADDRSTRLEN]){
+	int socket_fd, numByte;
+	char buf[1024];
+	struct addrinfo sockets, *client, *q;
+	int rv;
+	char t[INET_ADDRSTRLEN];
+	
+	memset (&sockets, 0, sizeof(sockets));
+	sockets.ai_family = AF_UNSPEC;
+	sockets.ai_family = SOCK_STREAM;
+	if ((rv = getaddrinfo(s, dataPort, &sockets, &client)) != 0){
+		cout << "Error in getarrdinfo\n";
+	}
+	for (q = client; q != NULL; q = q->ai_next){
+		if ((socket_fd = socket(q->ai_family, q->ai_socktype, q->ai_protocol))== -1){
+			cout << "error in list dir socket_fd\n";
+			exit(EXIT_FAILURE);
+		} 
+		if(connect(socket_fd, q->ai_addr, q->ai_addrlen) == -1){
+			cout << "error listDir connect\n";
+		}
+		break;
+	
+	}
+	if(q == NULL){
+		cout << "connection failed\n";
+	}
+	
+	//inet_ntop(q->ai_family, get_in_addr((struct sockaddr *)q->ai_addr), q, sizeof q);
+	//cout << "connected to: " << q << endl;
+	
 	cout << "List directory requested \n on port " <<  dataPort << endl;
 	cout << "Sending Directory \n contents to " <<  dataPort << endl;
 	exit(EXIT_SUCCESS);
@@ -94,7 +124,7 @@ void sendError(){
 //-l will go to the list function
 //-g will go to the file transfer function
 //Otherwise go to error function
-void instructions(int client_fd){
+void instructions(int client_fd, const char *serverPort, char s[INET_ADDRSTRLEN]){
 	
 	char *clientIn = (char*)malloc(1028);
 	int bytRcv = 0;
@@ -102,6 +132,7 @@ void instructions(int client_fd){
 	char* tok;
 	char* inputArr[1028];
 	int i = 0;
+	int k = 0;
 	//Set all the array to all zeros
 	memset(&clientIn[0], 0, sizeof(clientIn));
 	
@@ -112,7 +143,7 @@ void instructions(int client_fd){
 	else
 		cout << "error\n";
 	
-	bytRcv = strlen(standOut);
+	close(client_fd);
 	//Tokenize function, because I am used to C, and the Beej's guide uses C
 	//I am using the strtok function that I am used to
 	tok = strtok(standOut, " ");
@@ -123,11 +154,14 @@ void instructions(int client_fd){
 		i++;
 	}
 	
+	k = strlen(inputArr[1]);
+	cout << "the size of " << inputArr[1] << " is " << k << endl;
 	
-	cout << "The length of "<< inputArr[0] << " is " << bytRcv << endl;
+	
+	
 
 	if (strcmp(standOut, "-l")==0){
-		listDir(inputArr[1]);
+		listDir(inputArr[1], s);
 	}
 	else if (strcmp(standOut, "-g")==0){
 		fileSend(inputArr[1]);
@@ -159,6 +193,8 @@ int tcp_this( const char *this_port){
 	}
 	//get a socket
 	socket_fd = socket(tran->ai_family, tran->ai_socktype, tran->ai_protocol);
+	
+	
 	if(socket_fd == -1){
 		cout <<"socket_fd error\n";
 		exit(3);
@@ -211,7 +247,7 @@ void listening(int socket_fd, const char *this_port){
 		if (childProc == 0){
 			cout << "This is the child process\n";
 			close(socket_fd);
-			instructions(next_fd);
+			instructions(next_fd, this_port, s);
 		}
 		else if(childProc == -1){
 			cout << "fork failed\n";
