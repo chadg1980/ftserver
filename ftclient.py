@@ -39,31 +39,44 @@ controlSock = createSocket(serverName, serverPort)
 controlSock.send(msg)
 serverInput = controlSock.recv(1024)
 error = serverInput[:5]
+
 if(error == 'error'):
 	print serverInput;
 	controlSock.close()
 	sys.exit(0) 
+print (serverInput)
 controlSock.close()
 
 #examples from https://docs.python.org/2/library/socket.html#example
 # and https://docs.python.org/2.7/howto/sockets.html
 commandSock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 newDataPort = int(dataPort)
-x = len(dataPort)
-print x
-serverAddress = ('localhost', newDataPort)
+
+serverAddress = (serverName, newDataPort)
 commandSock.bind(serverAddress)
 commandSock.listen(1)
-print "starting command socket on port " + dataPort
+print "starting command socket on localhost:" + dataPort
 
+dataIn,  addr = commandSock.accept()
+file = open('newFile', 'w+')
 while 1:
-	dataIn,  addr = commandSock.accept()
+	
 	print 'connected by ', addr
 	data = dataIn.recv(1024)
-	print data
-	if not data: break
+	if data == 'break':
+		print "break received"
+		break;
+	with open('newFile', 'w+') as f:
+		f.write(data)
+	fileOpen = open('newFile', 'r+')
+	strToPrint = fileOpen.read()
+	fileOpen.close()
+	print str
 	dataIn.sendall(data)
 dataIn.close()
+
+
+
 
 
 

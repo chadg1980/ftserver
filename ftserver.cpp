@@ -64,7 +64,10 @@ void listDir (const char *dataPort, char s[INET_ADDRSTRLEN]){
 	struct addrinfo sockets, *client, *q;
 	int rv, connRV;
 	char t[INET_ADDRSTRLEN];
-	char MSG[34] = "error You've broken the internet!";
+	char MSG[13] = "break";
+	FILE *in;
+	char *buffer = (char*)malloc(1024);
+		
 	cout << "starting listDir "<< endl;
 	
 	memset (&sockets, 0, sizeof(sockets));
@@ -98,10 +101,19 @@ void listDir (const char *dataPort, char s[INET_ADDRSTRLEN]){
 	
 	//inet_ntop(q->ai_family, get_in_addr((struct sockaddr *)q->ai_addr), q, sizeof q);
 	//cout << "connected to: " << q << endl;
-	send(socket_fd, MSG, strlen(MSG), 0);
+	in = popen("ls", "r");
+	strtok(in, "\n");
+	while(fgets(buffer, sizeof(buffer), in) !=NULL){
+		send(socket_fd, buffer, (sizeof(buffer)+1), 0);
+		cout << buffer << endl;
+		memset(&buffer[0], 0, sizeof(buffer));
+	}
+	
 	cout << "List directory requested \n on port " <<  dataPort << endl;
 	cout << "Sending Directory \n contents to " <<  dataPort << endl;
-	exit(EXIT_SUCCESS);
+	
+	send(socket_fd, MSG, (sizeof(MSG)+1), 0);
+	close(socket_fd);
 
 }
 //function to send the file--NOT COMPLETE
@@ -127,6 +139,7 @@ while total < *len
 }
 //Function to send an error message
 void sendError(int p_fd){
+	cout << "sending error" << endl;
 	char errorMSG[34] = "error You've broken the internet!";
 	send(p_fd, errorMSG, strlen(errorMSG), 0);
 	exit(EXIT_SUCCESS);
@@ -142,6 +155,7 @@ void instructions(int control_fd, const char *serverPort, char s[INET_ADDRSTRLEN
 	char *clientIn = (char*)malloc(1028);
 	int bytRcv = 0;
 	char *standOut = (char*) malloc(1028);
+	char connected[10] = "Connected";
 	char* tok;
 	char* inputArr[1028];
 	int i = 0;
@@ -155,7 +169,8 @@ void instructions(int control_fd, const char *serverPort, char s[INET_ADDRSTRLEN
 	}
 	else
 		cout << "error\n";
-	
+	 
+	send(control_fd, connected, (strlen(connected)+1), 0);
 	//Close control connection
 	//close(client_fd);
 	
