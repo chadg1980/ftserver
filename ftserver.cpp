@@ -22,6 +22,7 @@ Chatserve.cpp
 #include <netdb.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <sys/fcntl.h>
 
 
 using namespace std;
@@ -56,26 +57,37 @@ void *get_in_addr(struct sockaddr *sa){
 }
 
 //Function to send the directory
+//The dataport needs to be opened
 void listDir (const char *dataPort, char s[INET_ADDRSTRLEN]){
 	int socket_fd, numByte;
 	char buf[1024];
 	struct addrinfo sockets, *client, *q;
-	int rv;
+	int rv, connRV;
 	char t[INET_ADDRSTRLEN];
+	char MSG[34] = "error You've broken the internet!";
+	cout << "starting listDir "<< endl;
 	
 	memset (&sockets, 0, sizeof(sockets));
 	sockets.ai_family = AF_UNSPEC;
-	sockets.ai_family = SOCK_STREAM;
-	if ((rv = getaddrinfo(s, dataPort, &sockets, &client)) != 0){
-		cout << "Error in getarrdinfo\n";
+	sockets.ai_socktype = SOCK_STREAM;
+	if ((rv = getaddrinfo("localhost", dataPort, &sockets, &client)) != 0){
+		cout << "Error in getarrdinfo \n\n\n" << gai_strerror(rv) << endl;
 	}
+	
 	for (q = client; q != NULL; q = q->ai_next){
-		if ((socket_fd = socket(q->ai_family, q->ai_socktype, q->ai_protocol))== -1){
+		socket_fd = socket(q->ai_family, q->ai_socktype, q->ai_protocol);
+		
+		if (socket_fd == -1){
+			cout << "\n\nsocket_fd = " << socket_fd << endl << endl;
 			cout << "error in list dir socket_fd\n";
 			exit(EXIT_FAILURE);
 		} 
-		if(connect(socket_fd, q->ai_addr, q->ai_addrlen) == -1){
-			cout << "error listDir connect\n";
+		
+		connRV = connect(socket_fd, q->ai_addr, q->ai_addrlen);
+		if(connRV == -1){
+			close(socket_fd);
+			perror("listdir: connect");
+			continue;
 		}
 		break;
 	
@@ -86,13 +98,13 @@ void listDir (const char *dataPort, char s[INET_ADDRSTRLEN]){
 	
 	//inet_ntop(q->ai_family, get_in_addr((struct sockaddr *)q->ai_addr), q, sizeof q);
 	//cout << "connected to: " << q << endl;
-	
+	send(socket_fd, MSG, strlen(MSG), 0);
 	cout << "List directory requested \n on port " <<  dataPort << endl;
 	cout << "Sending Directory \n contents to " <<  dataPort << endl;
 	exit(EXIT_SUCCESS);
 
 }
-//function to send the file
+//function to send the file--NOT COMPLETE
 void fileSend(const char *dataPort){
 cout << "File Send Function "<< endl; 
 exit(EXIT_SUCCESS);
@@ -114,8 +126,9 @@ while total < *len
 
 }
 //Function to send an error message
-void sendError(){
-	cout << "You've broken the internet!" << endl;
+void sendError(int p_fd){
+	char errorMSG[34] = "error You've broken the internet!";
+	send(p_fd, errorMSG, strlen(errorMSG), 0);
 	exit(EXIT_SUCCESS);
 
 }
@@ -124,8 +137,8 @@ void sendError(){
 //-l will go to the list function
 //-g will go to the file transfer function
 //Otherwise go to error function
-void instructions(int client_fd, const char *serverPort, char s[INET_ADDRSTRLEN]){
-	
+void instructions(int control_fd, const char *serverPort, char s[INET_ADDRSTRLEN]){
+	cout << "starting instructions" << endl;
 	char *clientIn = (char*)malloc(1028);
 	int bytRcv = 0;
 	char *standOut = (char*) malloc(1028);
@@ -136,14 +149,16 @@ void instructions(int client_fd, const char *serverPort, char s[INET_ADDRSTRLEN]
 	//Set all the array to all zeros
 	memset(&clientIn[0], 0, sizeof(clientIn));
 	
-	bytRcv = recv(client_fd, clientIn, 1027, 0);
+	bytRcv = recv(control_fd, clientIn, 1027, 0);
 	if (bytRcv > 0){
 		snprintf(standOut, bytRcv+1, "%s", clientIn);
 	}
 	else
 		cout << "error\n";
 	
-	close(client_fd);
+	//Close control connection
+	//close(client_fd);
+	
 	//Tokenize function, because I am used to C, and the Beej's guide uses C
 	//I am using the strtok function that I am used to
 	tok = strtok(standOut, " ");
@@ -153,21 +168,19 @@ void instructions(int client_fd, const char *serverPort, char s[INET_ADDRSTRLEN]
 		tok = strtok(NULL, " ");
 		i++;
 	}
-	
-	k = strlen(inputArr[1]);
-	cout << "the size of " << inputArr[1] << " is " << k << endl;
-	
-	
-	
-
+	//-l send to the list dir fucntion
 	if (strcmp(standOut, "-l")==0){
+		close(control_fd);
 		listDir(inputArr[1], s);
 	}
+	//-g sends to file send funtion
 	else if (strcmp(standOut, "-g")==0){
+		close(control_fd);
 		fileSend(inputArr[1]);
 	}
+	//error function
 	else{
-		sendError();
+		sendError(control_fd);
 	}
 	
 }
@@ -193,7 +206,7 @@ int tcp_this( const char *this_port){
 	}
 	//get a socket
 	socket_fd = socket(tran->ai_family, tran->ai_socktype, tran->ai_protocol);
-	
+	fcntl(socket_fd, F_SETFL, O_ASYNC);
 	
 	if(socket_fd == -1){
 		cout <<"socket_fd error\n";
@@ -211,6 +224,7 @@ int tcp_this( const char *this_port){
 		cout <<"error in bind " << bind_status << endl;
 	}
 	cout << "Server open on port " << this_port << endl;
+	freeaddrinfo(tran);
 return(socket_fd);
 	
 }
@@ -239,32 +253,14 @@ void listening(int socket_fd, const char *this_port){
 	if (next_fd < 0){
 		cout << "Accept error\n";
 	}
+	
 	//Function straight from Beej's guid
 	//Prints to STDOUT where the connection is coming from.
 	inet_ntop(them.ss_family, get_in_addr(( struct sockaddr *)&them), s, sizeof s);
 	cout << "connection from " << s << endl;
-	childProc = fork();
-		if (childProc == 0){
-			cout << "This is the child process\n";
-			close(socket_fd);
+	
 			instructions(next_fd, this_port, s);
-		}
-		else if(childProc == -1){
-			cout << "fork failed\n";
-			exit(6);
-		}
-		else{
-			close(next_fd);
-				//The do while loop is based on the man page for waitpid
-			do{
-				waitForIt = waitpid(childProc, &status, WUNTRACED | WCONTINUED);
-				if (waitForIt == -1){
-					cout << "waitpid error\n";
-					exit(7);
-				}
-				
-			}while(!WIFEXITED(status) && !WIFSIGNALED(status));
-		}
+		
 }
 
 
@@ -293,22 +289,7 @@ int main(int argc, char* argv[]){
 	main_fd = tcp_this(port);
 	
 	while (mySig == 1){
-		//read dead children, commented out error status
-		//code taken from my CS344 project
-		anyPID = waitpid(-1, &status, WNOHANG);
-		/*
-		if ( anyPID > 0){
-			if (status == 1 || status == 0){
-			printf("background pid %d is done: exit value %d\n", anyPID, status);
-			}
-			else if (status > 1){
-			printf("background pid %d is done: terminated by signal %d\n", anyPID, status);
-			}
-			else{
-				printf("background pid %d is done: %d\n", anyPID, status);
-			}
 		
-		}*/
 		listening(main_fd, port);
 	}
 	
