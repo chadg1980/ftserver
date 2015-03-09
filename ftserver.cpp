@@ -27,6 +27,11 @@ Chatserve.cpp
 
 using namespace std;
 
+//function definitions
+int tcp_this(const char*);
+int tcp_data(const char*);
+int listeningData(int, const char*);
+
 /*This function makes sure the command line inputs meet the requirements*/
 void validate(int arg_count){
 /*Make sure the port number is included in the command line call*/
@@ -58,91 +63,83 @@ void *get_in_addr(struct sockaddr *sa){
 
 //Function to send the directory
 //The dataport needs to be opened
-void listDir (const char *dataPort, char s[INET_ADDRSTRLEN]){
-	int socket_fd, numByte;
+void listDir (const char *dataPort,  char client[INET_ADDRSTRLEN]){
+	int data_fd, next_fd, numByte;
 	char buf[1024];
-	struct addrinfo sockets, *client, *q;
-	int rv, connRV;
-	char t[INET_ADDRSTRLEN];
-	char MSG[13] = "break";
+	char msg[1023];
 	FILE *in;
+	int len;
 	char *buffer = (char*)malloc(1024);
-		
-	cout << "starting listDir "<< endl;
-	
-	memset (&sockets, 0, sizeof(sockets));
-	sockets.ai_family = AF_UNSPEC;
-	sockets.ai_socktype = SOCK_STREAM;
-	if ((rv = getaddrinfo("localhost", dataPort, &sockets, &client)) != 0){
-		cout << "Error in getarrdinfo \n\n\n" << gai_strerror(rv) << endl;
-	}
-	
-	for (q = client; q != NULL; q = q->ai_next){
-		socket_fd = socket(q->ai_family, q->ai_socktype, q->ai_protocol);
-		
-		if (socket_fd == -1){
-			cout << "\n\nsocket_fd = " << socket_fd << endl << endl;
-			cout << "error in list dir socket_fd\n";
-			exit(EXIT_FAILURE);
-		} 
-		
-		connRV = connect(socket_fd, q->ai_addr, q->ai_addrlen);
-		if(connRV == -1){
-			close(socket_fd);
-			perror("listdir: connect");
-			continue;
-		}
-		break;
-	
-	}
-	if(q == NULL){
-		cout << "connection failed\n";
-	}
-	
-	//inet_ntop(q->ai_family, get_in_addr((struct sockaddr *)q->ai_addr), q, sizeof q);
-	//cout << "connected to: " << q << endl;
+	char *input = (char*)malloc(1024);
+	char *hello_sent = (char*) malloc(1024);
 	in = popen("ls", "r");
-	strtok(in, "\n");
+		
+	data_fd = tcp_data(dataPort);
+	next_fd = listeningData(data_fd, dataPort);
+	
+	numByte = recv(next_fd, msg, 1023, 0);
+	
 	while(fgets(buffer, sizeof(buffer), in) !=NULL){
-		send(socket_fd, buffer, (sizeof(buffer)+1), 0);
-		cout << buffer << endl;
+		send(next_fd, buffer, (sizeof(buffer)+1), 0);
 		memset(&buffer[0], 0, sizeof(buffer));
 	}
 	
-	cout << "List directory requested \n on port " <<  dataPort << endl;
-	cout << "Sending Directory \n contents to " <<  dataPort << endl;
+	cout << "List directory requested on port " <<  dataPort << endl;
+	cout << "Sending Directory contents to " << client << ":"<< dataPort << endl;
 	
-	send(socket_fd, MSG, (sizeof(MSG)+1), 0);
-	close(socket_fd);
+	close(data_fd);
 
 }
-//function to send the file--NOT COMPLETE
-void fileSend(const char *dataPort){
-cout << "File Send Function "<< endl; 
-exit(EXIT_SUCCESS);
-
-/*
-int total //how many bytes sent
-int left = *len // how many are left to send
-int n
-
-while total < *len 
-	n = send(msg, buf+total, bytesleft, 0)
-	total +=n
-	bytesleft -=n;
+//function to send the file
+void fileSend(const char *fileName, const char *dataPort, int control_fd){
 	
-	*len = total; 
+	int data_fd, next_fd; 
+	FILE *local_fd;
 	
-	retrun -1 for success, 0 for failure
-*/
+	char *buf = (char*)malloc(1024);
+	char *msg = (char*)malloc(1024);
+	char connected[10] = "good\n";
+		
+	local_fd = fopen(fileName, "r");
+	
+	if (local_fd != NULL){
+	send(control_fd, connected, (strlen(connected)+1), 0);
+	
+	data_fd = tcp_data(dataPort);
+	next_fd = listeningData(data_fd, dataPort);
+	
+	
+	
+		while(fgets(buf, sizeof(buf), local_fd) !=NULL){
+			send(next_fd, buf, (sizeof(buf)+1), 0);
+			memset(&buf[0], 0, sizeof(buf));
+			
+		}
+	sprintf(msg, "end");
+	send(next_fd, msg, (sizeof(msg)+1), 0);
+	memset(&msg[0], 0, sizeof(msg));
+	close(data_fd);
+	fclose(local_fd);
+	
+	}
+	else{
+	sprintf(msg, "File Not Found");
+	send(control_fd, msg, (sizeof(msg)+1), 0);
+	memset(&msg[0], 0, sizeof(msg));
+	sprintf(msg, "found");
+	send(control_fd, msg, (sizeof(msg)+1), 0);
+	
+	
+	}
+	
 
 }
 //Function to send an error message
 void sendError(int p_fd){
 	cout << "sending error" << endl;
-	char errorMSG[34] = "error You've broken the internet!";
-	send(p_fd, errorMSG, strlen(errorMSG), 0);
-	exit(EXIT_SUCCESS);
+	char errorMSG[34] = "error from SERVER SIDE";
+	send(p_fd, errorMSG, (strlen(errorMSG)+1), 0);
+	return;
 
 }
 
@@ -150,12 +147,12 @@ void sendError(int p_fd){
 //-l will go to the list function
 //-g will go to the file transfer function
 //Otherwise go to error function
-void instructions(int control_fd, const char *serverPort, char s[INET_ADDRSTRLEN]){
-	cout << "starting instructions" << endl;
+void instructions(int control_fd, const char *serverPort, char client[INET_ADDRSTRLEN]){
+	
 	char *clientIn = (char*)malloc(1028);
 	int bytRcv = 0;
 	char *standOut = (char*) malloc(1028);
-	char connected[10] = "Connected";
+	char connected[10] = "good\n";
 	char* tok;
 	char* inputArr[1028];
 	int i = 0;
@@ -170,7 +167,7 @@ void instructions(int control_fd, const char *serverPort, char s[INET_ADDRSTRLEN
 	else
 		cout << "error\n";
 	 
-	send(control_fd, connected, (strlen(connected)+1), 0);
+	
 	//Close control connection
 	//close(client_fd);
 	
@@ -178,20 +175,25 @@ void instructions(int control_fd, const char *serverPort, char s[INET_ADDRSTRLEN
 	//I am using the strtok function that I am used to
 	tok = strtok(standOut, " ");
 	while(tok){
+		
 		inputArr[i] = (char*) malloc(strlen(tok));
 		strcpy(inputArr[i], tok);
+		
 		tok = strtok(NULL, " ");
+		
 		i++;
 	}
+	
 	//-l send to the list dir fucntion
 	if (strcmp(standOut, "-l")==0){
+		send(control_fd, connected, (strlen(connected)+1), 0);
 		close(control_fd);
-		listDir(inputArr[1], s);
+		listDir(inputArr[1], client);
 	}
 	//-g sends to file send funtion
 	else if (strcmp(standOut, "-g")==0){
-		close(control_fd);
-		fileSend(inputArr[1]);
+		
+		fileSend(inputArr[1], inputArr[2], control_fd);
 	}
 	//error function
 	else{
@@ -243,6 +245,45 @@ int tcp_this( const char *this_port){
 return(socket_fd);
 	
 }
+int tcp_data( const char *this_port){
+	struct addrinfo serv;
+	struct addrinfo *tran;
+	int status, bind_status;
+	int socket_fd;
+	int yes = 1;
+	
+	memset(&serv, 0, sizeof(serv));
+	serv.ai_family = AF_UNSPEC;			//don't care IPv4 or IPv6
+	serv.ai_socktype = SOCK_STREAM;		//TCP!
+	serv.ai_flags = AI_PASSIVE;			//fill my IP in for me
+	if ((status = getaddrinfo(NULL, this_port, &serv, &tran)) != 0){
+		cout << "getaddrinfo error " << gai_strerror(status) << endl;
+		exit(2);
+	}
+	//get a socket
+	socket_fd = socket(tran->ai_family, tran->ai_socktype, tran->ai_protocol);
+	fcntl(socket_fd, F_SETFL, O_ASYNC);
+	
+	if(socket_fd == -1){
+		cout <<"socket_fd error\n";
+		exit(3);
+	}
+	//setsockopt line of code is from Beej's guide
+	if (setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) == -1){
+		cout << "error setsockopt\n";
+		exit(4);
+	}
+	//bind the socket
+	bind_status = bind(socket_fd, tran->ai_addr, tran->ai_addrlen);
+	if(bind_status == -1){
+		close(socket_fd);
+		cout <<"error in bind " << bind_status << endl;
+	}
+	cout << "Server open on port " << this_port << endl;
+	freeaddrinfo(tran);
+return(socket_fd);
+	
+}
 	
 //Function to listen, is in a loop in main until CTRL-C is pressed
 // sends data to the appropriate place
@@ -252,7 +293,7 @@ void listening(int socket_fd, const char *this_port){
 	struct sockaddr_storage them;
 	socklen_t addr_size;
 	int next_fd;
-	char s[INET_ADDRSTRLEN];
+	char client[INET_ADDRSTRLEN];
 	pid_t childProc = -5;
 	pid_t waitForIt;
 	int status;
@@ -261,7 +302,7 @@ void listening(int socket_fd, const char *this_port){
 		cout << "listening error\n";
 		exit(5);
 	}
-	
+	cout << "listening on port " << this_port << endl;
 	//accept a connection
 	addr_size = sizeof(them);
 	next_fd = accept(socket_fd, (sockaddr *) &them, &addr_size);
@@ -271,14 +312,45 @@ void listening(int socket_fd, const char *this_port){
 	
 	//Function straight from Beej's guid
 	//Prints to STDOUT where the connection is coming from.
-	inet_ntop(them.ss_family, get_in_addr(( struct sockaddr *)&them), s, sizeof s);
-	cout << "connection from " << s << endl;
+	inet_ntop(them.ss_family, get_in_addr(( struct sockaddr *)&them), client, sizeof client);
+	cout << "connection from " << client << endl;
 	
-			instructions(next_fd, this_port, s);
+			instructions(next_fd, this_port, client);
 		
 }
 
-
+//SET up listening for the data port
+int listeningData(int socket_fd, const char *this_port){
+	
+	int listen_status;
+	struct sockaddr_storage them;
+	socklen_t addr_size;
+	int next_fd;
+	char client[INET_ADDRSTRLEN];
+		
+	listen_status= listen(socket_fd, 10);
+	if (listen_status == -1){
+		cout << "listening Data error\n";
+		exit(5);
+	}
+	cout << "listening on DataPort " << this_port << endl;
+	//accept a connection
+	addr_size = sizeof(them);
+	next_fd = accept(socket_fd, (sockaddr *) &them, &addr_size);
+	if (next_fd < 0){
+		cout << "Data Accept error\n";
+	}
+	
+	//Function straight from Beej's guid
+	//Prints to STDOUT where the connection is coming from.
+	inet_ntop(them.ss_family, get_in_addr(( struct sockaddr *)&them), client, sizeof client);
+	
+	cout << "Data Connection from " << client << endl;
+	return next_fd;
+	
+	  
+	
+}
 
 
 //The majority of this code is from Beej's Guide. I coded along with Beej's guide, 

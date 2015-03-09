@@ -6,6 +6,7 @@ Program 2
 """
 import socket
 import sys
+import time
 
 RCVHOST = ''
 
@@ -29,51 +30,60 @@ else:
 	serverName = sys.argv[1]
 	serverPort = int(sys.argv[2])
 	command = sys.argv[3]
+if command == '-l':
 	dataPort = sys.argv[4]
+	#msg sends the command to the server
+	msg = (command + " " + dataPort)
+elif command == '-g':
+	fileName = sys.argv[4]
+	dataPort = sys.argv[5]
+	#msg sends the command to the server
+	msg = (command + " " + fileName + " " + dataPort)
+else:
+	print command + " not recongnized"
+	sys.exit(0)
 
-#msg sends the command to the server
-msg = (command + " " + dataPort)
 
+
+
+hello = "hello world from the client"
 #control sock is the control connection
+print 'client starts command port'
 controlSock = createSocket(serverName, serverPort)
 controlSock.send(msg)
 serverInput = controlSock.recv(1024)
 error = serverInput[:5]
+good = serverInput [:4]
 
-if(error == 'error'):
+if error == 'error':
 	print serverInput;
 	controlSock.close()
-	sys.exit(0) 
-print (serverInput)
-controlSock.close()
+	sys.exit(1) 
+elif good == 'good':
+	controlSock.close()
+	time.sleep(1)
+	newDataPort = int(dataPort)
+	dataSock = createSocket(serverName, newDataPort)
+	dataSock.send(hello)
+	if command == '-l':
+		print 'Receiving Directory from ' + serverName +":"+ dataPort
+		newData = dataSock.recv(1024)
+		print (newData)
+	elif command == '-g':
+		print "Receiving " + fileName + " from " + serverName + ":"+dataPort
+		file = open(fileName, 'w+')
+		data = dataSock.recv(1024)
+		with open(fileName, 'w+') as f:
+			f.write(data)
+		data = dataSock.recv(1024)
+		print "file transfer done."
+		dataSock.close()
+else:
+	print(serverInput)
+	print 'something went wrong'
+	controlSock.close()
+sys.exit(0)
 
-#examples from https://docs.python.org/2/library/socket.html#example
-# and https://docs.python.org/2.7/howto/sockets.html
-commandSock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-newDataPort = int(dataPort)
-
-serverAddress = (serverName, newDataPort)
-commandSock.bind(serverAddress)
-commandSock.listen(1)
-print "starting command socket on localhost:" + dataPort
-
-dataIn,  addr = commandSock.accept()
-file = open('newFile', 'w+')
-while 1:
-	
-	print 'connected by ', addr
-	data = dataIn.recv(1024)
-	if data == 'break':
-		print "break received"
-		break;
-	with open('newFile', 'w+') as f:
-		f.write(data)
-	fileOpen = open('newFile', 'r+')
-	strToPrint = fileOpen.read()
-	fileOpen.close()
-	print str
-	dataIn.sendall(data)
-dataIn.close()
 
 
 
